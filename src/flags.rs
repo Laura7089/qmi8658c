@@ -27,16 +27,22 @@ pub mod config {
     macro_rules! u8_convert {
         (
             $(
-                $(#[$o:meta])*
+                $(#[$outer:meta])*
                 $v:vis enum $name:ident {
-                    $( $field:ident = $val:literal, )*
+                    $(
+                        $(#[$inner:meta])*
+                        $field:ident = $val:literal,
+                    )*
                 }
             )*
         ) => {
             $(
-            $(#[$o])*
+            $(#[$outer])*
             $v enum $name {
-                $( $field = $val, )*
+                $(
+                    $(#[$inner])*
+                    $field = $val,
+                )*
             }
             impl From<u8> for $name {
                 fn from(input: u8) -> Self {
@@ -111,6 +117,48 @@ pub mod config {
         BW5_39 = 0b10,
         BW13_37 = 0b11,
     }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum ALPF_MODE {
+        BW2_66 = 0b00,
+        BW3_64 = 0b01,
+        BW5_39 = 0b10,
+        BW13_37 = 0b11,
+    }
+
+    /// Attitude Engine Output Data Rate (ODR)
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum SODR {
+        ODR1 = 0b000,
+        ODR2 = 0b001,
+        ODR4 = 0b010,
+        ODR8 = 0b011,
+        ODR16 = 0b100,
+        ODR32 = 0b101,
+        ODR64 = 0b111,
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum FIFO_SIZE {
+        Samples16 = 0b00,
+        Samples32 = 0b01,
+        Samples64 = 0b10,
+        Samples128 = 0b11,
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub enum FIFO_MODE {
+        /// FIFO disable
+        Bypass = 0b00,
+        FIFO = 0b01,
+        Stream = 0b10,
+        /// See datasheet
+        StreamToFIFO = 0b11,
+    }
     }
 }
 
@@ -121,8 +169,13 @@ pub mod config {
 pub(crate) enum FlagRegister {
     CTRL1 = 0x02,
     CTRL2 = 0x03,
+    CTRL3 = 0x04,
+    CTRL5 = 0x06,
+    CTRL6 = 0x07,
     CTRL7 = 0x08,
     CTRL8 = 0x09,
+    FIFO_CTRL = 0x14,
+    FIFO_STATUS = 0x16,
     STATUSINT = 0x2d,
     STATUS0 = 0x2e,
     STATUS1 = 0x2f,
@@ -177,6 +230,32 @@ hasbits! {
         gst: config::ConvertibleBool => 7:7,
         gfs: config::GFS => 4:6,
         godr: config::GODR => 0:3,
+    }
+
+    pub(crate) struct CTRL5 {
+        glpf_mode: config::GLPF_MODE => 5:6,
+        glpf_en: config::ConvertibleBool => 4:4,
+        alpf_mode: config::ALPF_MODE => 1:2,
+        alpf_en: config::ConvertibleBool => 0:0,
+    }
+
+    pub(crate) struct CTRL6 {
+        smod: config::ConvertibleBool => 7:7,
+        sodr: config::SODR => 0:2,
+    }
+
+    pub(crate) struct FIFO_CTRL {
+        fifo_rd_mode: config::ConvertibleBool => 7:7,
+        fifo_size: config::FIFO_SIZE => 2:3,
+        fifo_mode: config::FIFO_MODE => 0:1,
+    }
+
+    pub(crate) struct FIFO_STATUS {
+        fifo_full: config::ConvertibleBool => 7:7,
+        fifo_wtm: config::ConvertibleBool => 6:6,
+        fifo_ovflow: config::ConvertibleBool => 5:5,
+        fifo_not_empty: config::ConvertibleBool => 4:4,
+        fifo_smpl_cnt_msb: u8 => 0:1,
     }
 }
 
@@ -272,8 +351,13 @@ pub(crate) trait Flags<I: I2c> {
 
     getter!(get_ctrl1 -> CTRL1);
     getter!(get_ctrl2 -> CTRL2);
+    getter!(get_ctrl3 -> CTRL3);
+    getter!(get_ctrl5 -> CTRL5);
+    getter!(get_ctrl6 -> CTRL6);
     getter!(get_ctrl7 -> CTRL7);
     getter!(get_ctrl8 -> CTRL8);
+    getter!(get_fifo_ctrl -> FIFO_CTRL);
+    getter!(get_fifo_status -> FIFO_STATUS);
     getter!(get_statusint -> STATUSINT);
     getter!(get_status0 -> STATUS0);
     getter!(get_status1 -> STATUS1);
@@ -282,8 +366,12 @@ pub(crate) trait Flags<I: I2c> {
 
     setter!(set_ctrl1 -> CTRL1);
     setter!(set_ctrl2 -> CTRL2);
+    setter!(set_ctrl3 -> CTRL3);
+    setter!(set_ctrl5 -> CTRL5);
+    setter!(set_ctrl6 -> CTRL6);
     setter!(set_ctrl7 -> CTRL7);
     setter!(set_ctrl8 -> CTRL8);
+    setter!(set_fifo_ctrl -> FIFO_CTRL);
 }
 
 impl<I: I2c, T> Flags<I> for T

@@ -29,15 +29,9 @@ pub mod sa0 {
 pub enum Register8 {
     WHO_AM_I = 0x00,
     REVISION_ID = 0x01,
-    CTRL2 = 0x03,
-    CTRL3 = 0x04,
-    CTRL5 = 0x06,
-    CTRL6 = 0x07,
     CTRL9 = 0x0a,
     FIFO_WTM_TH = 0x13,
-    FIFO_CTRL = 0x14,
     FIFO_SMPL_CNT = 0x15,
-    FIFO_STATUS = 0x16,
     FIFO_DATA = 0x17,
     RESET = 0x60,
 }
