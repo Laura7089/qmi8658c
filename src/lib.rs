@@ -2,14 +2,16 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::pedantic)]
 
-// TODO: interrupts
 // TODO: FIFO implemented
 // TODO: Wake on Motion
 // TODO: type-model AttitudeEngine mode
 // TODO: `TryInto` conversions for the different enable states?
 
-// Note: magnetometer not connected on bob so cannot test at all, no implementation
-// provided in this crate
+// Note: following features not connected on bob so cannot test at all
+// Thus, no implementation provided in this crate
+//
+// - interrupts not connected on bob
+// - external magnetometer
 
 mod flags;
 mod registers;
