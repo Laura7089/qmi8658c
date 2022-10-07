@@ -79,10 +79,47 @@ pub mod config {
 
     u8_convert! {
     /// Accelerometer Output Data Rate (ODR)
+    ///
+    /// See variant doc below for more information on specific settings.
     // TODO
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub enum AODR {}
+    pub enum AODR {
+        /// Accel N/A, 6DOF 7520Hz
+        AN_6DOF7520 = 0b0000,
+        /// Accel N/A, 6DOF 3760Hz
+        AN_6DOF3760 = 0b0001,
+        /// Accel N/A, 6DOF 1880Hz
+        AN_6DOF1880 = 0b0010,
+        /// Accel 1000Hz, 6DOF 940Hz
+        A1000_6DOF940 = 0b0011,
+        /// Accel 500Hz, 6DOF 740Hz
+        A500_6DOF470 = 0b0100,
+        /// Accel 250Hz, 6DOF 250Hz
+        A250_6DOF235 = 0b0101,
+        /// Accel 125Hz, 6DOF 125Hz
+        A125_6DOF117_5 = 0b0110,
+        /// Accel 64.5Hz, 6DOF 64.5Hz
+        A64_5_6DOF58_75 = 0b0111,
+        /// Accel 31.25Hz, 6DOF 31.25Hz
+        A31_25_6DOF29_375 = 0b1000,
+        /// Accel 128Hz, 6DOF N/A
+        ///
+        /// Low power, duty cycle = 100%
+        A128_6DOFN = 0b1100,
+        /// Accel 21Hz, 6DOF N/A
+        ///
+        /// Low power, duty cycle = 58%
+        A21_6DOFN = 0b1101,
+        /// Accel 11Hz, 6DOF N/A
+        ///
+        /// Low power, duty cycle = 31%
+        A11_6DOFN = 0b1110,
+        /// Accel 3Hz, 6DOF N/A
+        ///
+        /// Low power, duty cycle = 8.5%
+        A3_6DOFN = 0b1111,
+    }
 
     /// Accelerometer Full-scale
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -109,6 +146,7 @@ pub mod config {
     }
 
     /// Gyroscope Output Data Rate (ODR), in Hz
+    // TODO: `Into<f32>`?
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub enum GODR {
@@ -121,7 +159,7 @@ pub mod config {
         GODR117_5 = 0b0110,
         GODR58_75 = 0b0111,
         GODR29_375 = 0b1000,
-        // TODO: do we need the others?
+        Off = 0b1001, // TODO: valid?
     }
 
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -174,6 +212,41 @@ pub mod config {
         /// See datasheet
         StreamToFIFO = 0b11,
     }
+    }
+
+    impl AODR {
+        /// Get the accelerometer Output Data Rate as a float, if active
+        pub fn into_accel_rate(self) -> Option<f32> {
+            Some(match self {
+                Self::A1000_6DOF940 => 1000.0,
+                Self::A500_6DOF470 => 500.0,
+                Self::A250_6DOF235 => 250.0,
+                Self::A125_6DOF117_5 => 125.0,
+                Self::A64_5_6DOF58_75 => 64.5,
+                Self::A31_25_6DOF29_375 => 31.25,
+                Self::A128_6DOFN => 128.0,
+                Self::A21_6DOFN => 21.0,
+                Self::A11_6DOFN => 11.0,
+                Self::A3_6DOFN => 3.0,
+                _ => return None,
+            })
+        }
+
+        /// Get the 6 Degrees of Freedom Output Data Rate as a float, if active
+        pub fn into_6dof_rate(self) -> Option<f32> {
+            Some(match self {
+                Self::AN_6DOF7520 => 7520.0,
+                Self::AN_6DOF3760 => 3760.0,
+                Self::AN_6DOF1880 => 1880.0,
+                Self::A1000_6DOF940 => 940.0,
+                Self::A500_6DOF470 => 470.0,
+                Self::A250_6DOF235 => 235.0,
+                Self::A125_6DOF117_5 => 117.5,
+                Self::A64_5_6DOF58_75 => 58.75,
+                Self::A31_25_6DOF29_375 => 29.375,
+                _ => return None,
+            })
+        }
     }
 }
 

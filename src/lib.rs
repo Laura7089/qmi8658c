@@ -6,8 +6,10 @@
 // TODO: FIFO implemented
 // TODO: Wake on Motion
 // TODO: type-model AttitudeEngine mode
-// TODO: support magnetometer? note: not connected on bob so cannot test at all
 // TODO: `TryInto` conversions for the different enable states?
+
+// Note: magnetometer not connected on bob so cannot test at all, no implementation
+// provided in this crate
 
 mod flags;
 mod registers;
@@ -100,6 +102,9 @@ impl defmt::Format for Temperature {
 }
 
 /// Sensor mode typestate for the [`QMI8658C`]
+///
+/// See [this blog post](https://cliffle.com/blog/rust-typestate/) for a short introduction to the
+/// idea of typestate in an API.
 pub mod modes {
     /// Status of the onboard accelerometer
     pub trait AccelStatus {}
@@ -123,6 +128,7 @@ pub mod modes {
     ///
     /// This is the default state, returned by both [`crate::QMI8658C::new`] and [`crate::QMI8658C::reset`].
     pub type QMI8658COff<I, S> = super::QMI8658C<I, AccelOff, GyroOff, S>;
+    /// A [`crate::QMI8658C`] with both sensors active
     pub type QMI8658CActive<I, S> = super::QMI8658C<I, AccelActive, GyroActive, S>;
 }
 
@@ -163,8 +169,17 @@ where
     /// Convenience function for activating both sensors
     ///
     /// Activates accelerometer first.
-    pub fn activate_both(self) -> Result<modes::QMI8658CActive<I, S>, E> {
-        Ok(self.activate_accel()?.activate_gyro()?)
+    ///
+    /// # Panics
+    ///
+    /// Panics under the same conditions as [`QMI8658C::activate_accel`] and
+    /// [`QMI8658C::activate_gyro`]
+    pub fn activate_both(
+        self,
+        accel_rate: config::AODR,
+        gyro_rate: config::GODR,
+    ) -> Result<modes::QMI8658CActive<I, S>, E> {
+        Ok(self.activate_accel(accel_rate)?.activate_gyro(gyro_rate)?)
     }
 }
 
@@ -187,9 +202,22 @@ where
         Ok(new)
     }
 
+    /// Get the contents of the `WHO_AM_I` and `REVISION_ID` registers
+    pub fn info(&mut self) -> Result<(u8, u8), E> {
+        Ok((
+            bytemuck::cast(self.read_reg8(Register8::WHO_AM_I)?),
+            bytemuck::cast(self.read_reg8(Register8::REVISION_ID)?),
+        ))
+    }
+
     /// Make a temperature measurement
     pub fn read_temp(&mut self) -> Result<Temperature, E> {
         Ok(Temperature(self.read_reg16s(Register16::TEMP)?))
+    }
+
+    /// Destroy the accelerometer struct and yield the i2c object
+    pub fn destroy(self) -> I {
+        self.i2c
     }
 
     fn ctrl9_command(&mut self, cmd: CTRL9Command) -> nb::Result<(), E> {
@@ -211,7 +239,6 @@ where
     }
 }
 
-// TODO: deactivation methods?
 impl<I, S, E, G> QMI8658C<I, modes::AccelOff, G, S>
 where
     I: I2c<Error = E>,
@@ -219,27 +246,57 @@ where
     G: modes::GyroStatus,
 {
     /// Turn on the accelerometer and update type-state
-    pub fn activate_accel(self) -> Result<QMI8658C<I, modes::AccelActive, G, S>, E> {
-        // all needs replacing
+    ///
+    /// # Panics
+    ///
+    /// Panics if given a value of [`config::AODR`] with the accelerometer disabled (ie.
+    /// `AN_*`).
+    pub fn activate_accel(
+        mut self,
+        rate: config::AODR,
+    ) -> Result<QMI8658C<I, modes::AccelActive, G, S>, E> {
+        // TODO: check this works
+        match rate {
+            config::AODR::A1000_6DOF940
+            | config::AODR::A500_6DOF470
+            | config::AODR::A250_6DOF235
+            | config::AODR::A125_6DOF117_5
+            | config::AODR::A64_5_6DOF58_75
+            | config::AODR::A31_25_6DOF29_375
+            | config::AODR::A128_6DOFN
+            | config::AODR::A21_6DOFN
+            | config::AODR::A11_6DOFN
+            | config::AODR::A3_6DOFN => {}
+            _ => panic!("Non-active accelerometer reading given"),
+        }
+
         let new_flags = flags::CTRL2 {
-            aodr: todo!(),
+            aodr: rate,
             ..self.get_ctrl2()?
         };
         self.set_ctrl2(new_flags)?;
 
-        todo!()
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 
     /// Turn off the accelerometer and update type-state
-    pub fn deactivate_accel(self) -> Result<QMI8658C<I, modes::AccelOff, G, S>, E> {
-        // all needs replacing
+    pub fn deactivate_accel(mut self) -> Result<QMI8658C<I, modes::AccelOff, G, S>, E> {
+        // TODO: check this works
         let new_flags = flags::CTRL2 {
-            aodr: todo!(),
+            aodr: config::AODR::AN_6DOF7520,
             ..self.get_ctrl2()?
         };
         self.set_ctrl2(new_flags)?;
 
-        todo!()
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 }
 
@@ -250,27 +307,46 @@ where
     A: modes::AccelStatus,
 {
     /// Turn on the gyroscope and update type-state
-    pub fn activate_gyro(self) -> Result<QMI8658C<I, A, modes::GyroActive, S>, E> {
-        // all needs replacing
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`config::GODR::Off`] is passed.
+    pub fn activate_gyro(
+        mut self,
+        godr: config::GODR,
+    ) -> Result<QMI8658C<I, A, modes::GyroActive, S>, E> {
+        if godr == config::GODR::Off {
+            panic!("GODR::off passed to `activate_gyro`");
+        }
+
+        // TODO: check this
         let new_flags = flags::CTRL3 {
-            godr: todo!(),
+            godr,
             ..self.get_ctrl3()?
         };
         self.set_ctrl3(new_flags)?;
 
-        todo!()
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 
     /// Turn off the gyroscope and update type-state
-    pub fn deactivate_gyro(self) -> Result<QMI8658C<I, A, modes::GyroOff, S>, E> {
-        // all needs replacing
+    pub fn deactivate_gyro(mut self) -> Result<QMI8658C<I, A, modes::GyroOff, S>, E> {
+        // TODO: check this
         let new_flags = flags::CTRL3 {
-            godr: todo!(),
+            godr: config::GODR::Off,
             ..self.get_ctrl3()?
         };
         self.set_ctrl3(new_flags)?;
 
-        todo!()
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 }
 
@@ -380,7 +456,9 @@ where
     }
 
     fn sample_rate(&mut self) -> Result<f32, Error<E>> {
-        todo!()
+        let aodr = self.get_ctrl2()?.aodr;
+        // TODO: handle `None` case more elegantly
+        Ok(aodr.into_accel_rate().unwrap())
     }
 }
 

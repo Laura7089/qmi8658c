@@ -3,8 +3,6 @@ use super::QMI8658C;
 use defmt::{assert, debug, info, trace};
 use embedded_hal::i2c::blocking::I2c;
 
-// TODO: TIMESTAMP register
-
 /// Configure the I2C address select pin
 pub mod sa0 {
     /// I2C address select pin
@@ -66,6 +64,10 @@ pub(crate) enum Register16 {
     dVZ = 0x55,
 }
 
+pub(crate) enum Register32 {
+    TIMESTAMP = 0x30,
+}
+
 pub(crate) trait Registers<I: I2c> {
     const ADDR: u8;
 
@@ -120,6 +122,16 @@ pub(crate) trait Registers<I: I2c> {
         let raw = bytemuck::bytes_of(&val);
 
         self.write_raw(lsb_addr, [raw[1], raw[0]])
+    }
+
+    fn read_reg24(&mut self, reg: Register32) -> Result<u32, I::Error> {
+        let lsb_addr = reg as u8;
+        let mut raw: [u8; 3] = self.read_raw(lsb_addr)?;
+        raw.reverse();
+        let mut padded_raw = [0_u8; 4];
+        padded_raw[1..4].copy_from_slice(&raw);
+
+        Ok(bytemuck::cast(padded_raw))
     }
 }
 
