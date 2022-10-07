@@ -7,7 +7,7 @@
 // TODO: Wake on Motion
 // TODO: type-model AttitudeEngine mode
 // TODO: support magnetometer? note: not connected on bob so cannot test at all
-// TODO: `Into` conversions for the different enable states?
+// TODO: `TryInto` conversions for the different enable states?
 
 mod flags;
 mod registers;
@@ -21,7 +21,7 @@ use core::marker::PhantomData;
 use registers::{Register16, Register8, Registers};
 
 #[cfg(feature = "defmt")]
-use defmt::{assert, debug, info, trace};
+use defmt::{assert, debug, info, trace, write, Formatter};
 use embedded_hal::delay::blocking::DelayUs;
 use embedded_hal::i2c::blocking::I2c;
 #[cfg(feature = "micromath")]
@@ -58,30 +58,46 @@ pub(crate) enum CTRL9Command {
 }
 
 /// An acceleration measurement, in g
-// TODO: manually implement Format for prettiness
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Acceleration {
     pub x: i16,
     pub y: i16,
     pub z: i16,
 }
+#[cfg(feature = "defmt")]
+impl defmt::Format for Acceleration {
+    fn format(&self, fmt: Formatter) {
+        write!(fmt, "Accel(x: {}g, y: {}g, z: {}g)", self.x, self.y, self.z);
+    }
+}
 
 /// An angular rate measurement, in degrees/second
-// TODO: manually implement Format for prettiness
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AngularRate {
     pub x: i16,
     pub y: i16,
     pub z: i16,
 }
+#[cfg(feature = "defmt")]
+impl defmt::Format for AngularRate {
+    fn format(&self, fmt: Formatter) {
+        write!(
+            fmt,
+            "Angular(x: {}°/s, y: {}°/s, z: {}°/s)",
+            self.x, self.y, self.z
+        );
+    }
+}
 
-/// A temperature measurement, in degrees celsius
-// TODO: manually implement Format for prettiness
+/// A temperature measurement, in °C (degrees celsius)
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Temperature(pub i16);
+#[cfg(feature = "defmt")]
+impl defmt::Format for Temperature {
+    fn format(&self, fmt: Formatter) {
+        write!(fmt, "{}°C", self.0);
+    }
+}
 
 /// Sensor mode typestate for the [`QMI8658C`]
 pub mod modes {
@@ -202,7 +218,20 @@ where
     S: sa0::SA0,
     G: modes::GyroStatus,
 {
+    /// Turn on the accelerometer and update type-state
     pub fn activate_accel(self) -> Result<QMI8658C<I, modes::AccelActive, G, S>, E> {
+        // all needs replacing
+        let new_flags = flags::CTRL2 {
+            aodr: todo!(),
+            ..self.get_ctrl2()?
+        };
+        self.set_ctrl2(new_flags)?;
+
+        todo!()
+    }
+
+    /// Turn off the accelerometer and update type-state
+    pub fn deactivate_accel(self) -> Result<QMI8658C<I, modes::AccelOff, G, S>, E> {
         // all needs replacing
         let new_flags = flags::CTRL2 {
             aodr: todo!(),
@@ -220,7 +249,20 @@ where
     S: sa0::SA0,
     A: modes::AccelStatus,
 {
+    /// Turn on the gyroscope and update type-state
     pub fn activate_gyro(self) -> Result<QMI8658C<I, A, modes::GyroActive, S>, E> {
+        // all needs replacing
+        let new_flags = flags::CTRL3 {
+            godr: todo!(),
+            ..self.get_ctrl3()?
+        };
+        self.set_ctrl3(new_flags)?;
+
+        todo!()
+    }
+
+    /// Turn off the gyroscope and update type-state
+    pub fn deactivate_gyro(self) -> Result<QMI8658C<I, A, modes::GyroOff, S>, E> {
         // all needs replacing
         let new_flags = flags::CTRL3 {
             godr: todo!(),
