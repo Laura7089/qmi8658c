@@ -7,19 +7,34 @@ use defmt::trace;
 use embedded_hal::i2c::blocking::I2c;
 
 pub mod config {
-    pub struct ConvertibleBool(bool);
-    impl From<bool> for ConvertibleBool {
+    /// A simple newtype around a [`bool`]
+    ///
+    /// Most easily used with [`Into<bool>`]:
+    ///
+    /// ```rust
+    /// # use qmi8658c::config::ConfBool;
+    /// let my_conf_bool: ConfBool = true.into();
+    /// ```
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+    pub struct ConfBool(pub bool);
+    impl From<bool> for ConfBool {
         fn from(b: bool) -> Self {
             Self(b)
         }
     }
-    impl From<u8> for ConvertibleBool {
+    impl Into<bool> for ConfBool {
+        fn into(self) -> bool {
+            self.0
+        }
+    }
+    impl From<u8> for ConfBool {
         fn from(int: u8) -> Self {
             Self(int > 0)
         }
     }
-    impl From<ConvertibleBool> for u8 {
-        fn from(b: ConvertibleBool) -> Self {
+    impl From<ConfBool> for u8 {
+        fn from(b: ConfBool) -> Self {
             b.0 as Self
         }
     }
@@ -192,26 +207,26 @@ macro_rules! hasbits {
         $(
         $(#[$outer: meta])*
         $v:vis struct $name:ident {
-            $($field:ident : $ftype:ty => $bs:literal : $be:literal),*
+            $($fv:vis $f:ident : $ft:ty => $bs:literal : $be:literal),*
             $(,)?
         }
         )+
     ) => {
         $(
         $(#[$outer])*
-        $v struct $name { $($field: $ftype,)* }
+        $v struct $name { $($fv $f: $ft,)* }
 
         impl $name {
             pub(crate) fn bits(self) -> u8 {
                 let parts: &[u8] = &[
-                    $( <$ftype as Into<u8>>::into(self.$field) << $bs,)+
+                    $( <$ft as Into<u8>>::into(self.$f) << $bs,)+
                 ];
                 parts.into_iter().sum()
             }
 
             pub(crate) fn from_bits_truncate(__i: u8) -> Self {
                 Self {
-                    $( $field: ((__i & mask($bs, $be)) >> $bs).into(), )*
+                    $( $f: ((__i & mask($bs, $be)) >> $bs).into(), )*
                 }
             }
         }
@@ -221,68 +236,87 @@ macro_rules! hasbits {
 
 hasbits! {
     pub(crate) struct CTRL2 {
-        ast: config::ConvertibleBool => 7:7,
-        afs: config::AFS => 4:6,
-        aodr: config::AODR => 0:3,
+        pub ast: config::ConfBool => 7:7,
+        pub afs: config::AFS => 4:6,
+        pub aodr: config::AODR => 0:3,
     }
 
     pub(crate) struct CTRL3 {
-        gst: config::ConvertibleBool => 7:7,
-        gfs: config::GFS => 4:6,
-        godr: config::GODR => 0:3,
+        pub gst: config::ConfBool => 7:7,
+        pub gfs: config::GFS => 4:6,
+        pub godr: config::GODR => 0:3,
     }
 
     pub(crate) struct CTRL5 {
-        glpf_mode: config::GLPF_MODE => 5:6,
-        glpf_en: config::ConvertibleBool => 4:4,
-        alpf_mode: config::ALPF_MODE => 1:2,
-        alpf_en: config::ConvertibleBool => 0:0,
+        pub glpf_mode: config::GLPF_MODE => 5:6,
+        pub glpf_en: config::ConfBool => 4:4,
+        pub alpf_mode: config::ALPF_MODE => 1:2,
+        pub alpf_en: config::ConfBool => 0:0,
     }
 
     pub(crate) struct CTRL6 {
-        smod: config::ConvertibleBool => 7:7,
-        sodr: config::SODR => 0:2,
+        pub smod: config::ConfBool => 7:7,
+        pub sodr: config::SODR => 0:2,
     }
 
     pub(crate) struct FIFO_CTRL {
-        fifo_rd_mode: config::ConvertibleBool => 7:7,
-        fifo_size: config::FIFO_SIZE => 2:3,
-        fifo_mode: config::FIFO_MODE => 0:1,
+        pub fifo_rd_mode: config::ConfBool => 7:7,
+        pub fifo_size: config::FIFO_SIZE => 2:3,
+        pub fifo_mode: config::FIFO_MODE => 0:1,
     }
 
     pub(crate) struct FIFO_STATUS {
-        fifo_full: config::ConvertibleBool => 7:7,
-        fifo_wtm: config::ConvertibleBool => 6:6,
-        fifo_ovflow: config::ConvertibleBool => 5:5,
-        fifo_not_empty: config::ConvertibleBool => 4:4,
-        fifo_smpl_cnt_msb: u8 => 0:1,
+        pub fifo_full: config::ConfBool => 7:7,
+        pub fifo_wtm: config::ConfBool => 6:6,
+        pub fifo_ovflow: config::ConfBool => 5:5,
+        pub fifo_not_empty: config::ConfBool => 4:4,
+        pub fifo_smpl_cnt_msb: u8 => 0:1,
     }
 }
 
 bitflags! {
     pub(crate) struct CTRL1: u8 {
+        /// Change from 4-wire spi to 3-wire spi
         const SIM = 1 << 7;
+        /// Enable auto-incrementing address
         const ADDR_AI = 1 << 6;
+        /// Enable big-endianness
         const BE = 1 << 5;
+        /// Disables internal 2MHz oscillator
         const SENSOR_DISABLE = 1;
     }
 
     pub(crate) struct CTRL7: u8 {
+        /// Enable syncSmple mode
         const SYNC_SMPL = 1 << 7;
+        /// Enable high speed internal clock
         const SYS_HS = 1 << 6;
+        /// Enable gyroscope snooze mode (see datasheet)
         const GSN = 1 << 4;
+        /// Enable AttitudeEngine orientation and velocity increment computation
         const SEN = 1 << 3;
+        /// Enable gyroscope
         const GEN = 1 << 1;
+        /// Enable accelerometer
         const AEN = 1;
     }
 
     pub(crate) struct CTRL8: u8 {
+        /// Switch from `INT1` to `STATUSINT::CTRL9_CMD_DONE` for handshake
         const CTRL9_HANDSHAKE_TYPE = 1 << 7;
+        /// Unclear
+        ///
+        /// Datasheet appears to have a typo for this one :/
         const INT_MOTION = 1 << 6;
+        /// Enable pedometer engine
         const PED_ENABLE = 1 << 4;
+        /// Enable significant motion engine
         const SIG_MOTION_ENABLE = 1 << 3;
+        /// Enable no motion engine
         const NO_MOTION_ENABLE = 1 << 2;
+        /// Enable any motion engine
         const ANY_MOTION_ENABLE = 1 << 1;
+        /// Enable tap engine
         const TAP_ENABLE = 1;
     }
 
@@ -323,24 +357,24 @@ bitflags! {
     }
 }
 
-macro_rules! getter {
-    ($funcname:ident -> $reg:ident) => {
-        fn $funcname(&mut self) -> Result<$reg, I::Error> {
+macro_rules! getters {
+    ($( $funcname:ident -> $reg:ident $(,)? )*) => {
+        $( fn $funcname(&mut self) -> Result<$reg, I::Error> {
             #[cfg(feature = "defmt")]
-            trace!("Reading flags from {}", FlagRegister::$reg);
+            trace!("Reading flags from $reg");
             Ok(<$reg>::from_bits_truncate(
                 self.read_flags(FlagRegister::$reg)?,
             ))
-        }
+        } )*
     };
 }
-macro_rules! setter {
-    ($funcname:ident -> $reg:ident) => {
-        fn $funcname(&mut self, val: $reg) -> Result<(), I::Error> {
+macro_rules! setters {
+    ($( $funcname:ident -> $reg:ident $(,)? )*) => {
+        $( fn $funcname(&mut self, val: $reg) -> Result<(), I::Error> {
             #[cfg(feature = "defmt")]
-            trace!("Writing flags to {}", FlagRegister::$reg);
+            trace!("Writing {} to device", val);
             self.write_flags(FlagRegister::$reg, val.bits())
-        }
+        } )*
     };
 }
 
@@ -349,29 +383,33 @@ pub(crate) trait Flags<I: I2c> {
     fn read_flags(&mut self, reg: FlagRegister) -> Result<u8, I::Error>;
     fn write_flags(&mut self, reg: FlagRegister, val: u8) -> Result<(), I::Error>;
 
-    getter!(get_ctrl1 -> CTRL1);
-    getter!(get_ctrl2 -> CTRL2);
-    getter!(get_ctrl3 -> CTRL3);
-    getter!(get_ctrl5 -> CTRL5);
-    getter!(get_ctrl6 -> CTRL6);
-    getter!(get_ctrl7 -> CTRL7);
-    getter!(get_ctrl8 -> CTRL8);
-    getter!(get_fifo_ctrl -> FIFO_CTRL);
-    getter!(get_fifo_status -> FIFO_STATUS);
-    getter!(get_statusint -> STATUSINT);
-    getter!(get_status0 -> STATUS0);
-    getter!(get_status1 -> STATUS1);
-    getter!(get_ae_reg1 -> AE_REG1);
-    getter!(get_ae_reg2 -> AE_REG2);
+    getters! {
+        get_ctrl1 -> CTRL1,
+        get_ctrl2 -> CTRL2,
+        get_ctrl3 -> CTRL3,
+        get_ctrl5 -> CTRL5,
+        get_ctrl6 -> CTRL6,
+        get_ctrl7 -> CTRL7,
+        get_ctrl8 -> CTRL8,
+        get_fifo_ctrl -> FIFO_CTRL,
+        get_fifo_status -> FIFO_STATUS,
+        get_statusint -> STATUSINT,
+        get_status0 -> STATUS0,
+        get_status1 -> STATUS1,
+        get_ae_reg1 -> AE_REG1,
+        get_ae_reg2 -> AE_REG2,
+    }
 
-    setter!(set_ctrl1 -> CTRL1);
-    setter!(set_ctrl2 -> CTRL2);
-    setter!(set_ctrl3 -> CTRL3);
-    setter!(set_ctrl5 -> CTRL5);
-    setter!(set_ctrl6 -> CTRL6);
-    setter!(set_ctrl7 -> CTRL7);
-    setter!(set_ctrl8 -> CTRL8);
-    setter!(set_fifo_ctrl -> FIFO_CTRL);
+    setters! {
+        set_ctrl1 -> CTRL1,
+        set_ctrl2 -> CTRL2,
+        set_ctrl3 -> CTRL3,
+        set_ctrl5 -> CTRL5,
+        set_ctrl6 -> CTRL6,
+        set_ctrl7 -> CTRL7,
+        set_ctrl8 -> CTRL8,
+        set_fifo_ctrl -> FIFO_CTRL,
+    }
 }
 
 impl<I: I2c, T> Flags<I> for T
@@ -379,10 +417,42 @@ where
     T: Registers<I>,
 {
     fn read_flags(&mut self, reg: FlagRegister) -> Result<u8, I::Error> {
-        self.read_raw(reg as u8)
+        Ok(self.read_raw::<1>(reg as u8)?[0])
     }
 
     fn write_flags(&mut self, reg: FlagRegister, val: u8) -> Result<(), I::Error> {
-        self.write_raw(reg as u8, val)
+        self.write_raw(reg as u8, [val])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hasbits_ctrl3() {
+        assert_eq!(
+            CTRL3 {
+                gst: false.into(),
+                gfs: config::GFS::GFS256dps,
+                godr: config::GODR::GODR58_75,
+            }
+            .bits(),
+            0b0100_0111,
+        );
+    }
+
+    #[test]
+    fn hasbits_ctrl5() {
+        assert_eq!(
+            CTRL5 {
+                glpf_mode: config::GLPF_MODE::BW2_66,
+                glpf_en: true.into(),
+                alpf_mode: config::ALPF_MODE::BW13_37,
+                alpf_en: false.into(),
+            }
+            .bits(),
+            0b0001_0110,
+        );
     }
 }
