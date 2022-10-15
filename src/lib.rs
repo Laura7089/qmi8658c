@@ -180,8 +180,11 @@ where
         self,
         accel_rate: config::AODR,
         gyro_rate: config::GODR,
+        delay: &mut impl DelayUs,
     ) -> Result<modes::QMI8658CActive<I, S>, E> {
-        Ok(self.activate_accel(accel_rate)?.activate_gyro(gyro_rate)?)
+        Ok(self
+            .activate_gyro(gyro_rate, delay)?
+            .activate_accel(accel_rate, delay)?)
     }
 }
 
@@ -256,6 +259,7 @@ where
     pub fn activate_accel(
         mut self,
         rate: config::AODR,
+        delay: &mut impl DelayUs,
     ) -> Result<QMI8658C<I, modes::AccelActive, G, S>, E> {
         // TODO: check this works
         match rate {
@@ -278,23 +282,12 @@ where
         };
         self.set_ctrl2(new_flags)?;
 
+        // TODO: messy error handling
+        delay
+            .delay_ms(3 + (3.0 / rate.into_accel_rate().unwrap()) as u32)
+            .unwrap();
         Ok(QMI8658C {
-            cmd_running: self.cmd_running,
-            i2c: self.destroy(),
-            _data: PhantomData,
-        })
-    }
-
-    /// Turn off the accelerometer and update type-state
-    pub fn deactivate_accel(mut self) -> Result<QMI8658C<I, modes::AccelOff, G, S>, E> {
-        // TODO: check this works
-        let new_flags = flags::CTRL2 {
-            aodr: config::AODR::AN_6DOF7520,
-            ..self.get_ctrl2()?
-        };
-        self.set_ctrl2(new_flags)?;
-
-        Ok(QMI8658C {
+            // TODO: do we want to pass this through?
             cmd_running: self.cmd_running,
             i2c: self.destroy(),
             _data: PhantomData,
@@ -316,6 +309,7 @@ where
     pub fn activate_gyro(
         mut self,
         godr: config::GODR,
+        delay: &mut impl DelayUs,
     ) -> Result<QMI8658C<I, A, modes::GyroActive, S>, E> {
         if godr == config::GODR::Off {
             panic!("GODR::off passed to `activate_gyro`");
@@ -328,23 +322,9 @@ where
         };
         self.set_ctrl3(new_flags)?;
 
+        // TODO: delay
         Ok(QMI8658C {
-            cmd_running: self.cmd_running,
-            i2c: self.destroy(),
-            _data: PhantomData,
-        })
-    }
-
-    /// Turn off the gyroscope and update type-state
-    pub fn deactivate_gyro(mut self) -> Result<QMI8658C<I, A, modes::GyroOff, S>, E> {
-        // TODO: check this
-        let new_flags = flags::CTRL3 {
-            godr: config::GODR::Off,
-            ..self.get_ctrl3()?
-        };
-        self.set_ctrl3(new_flags)?;
-
-        Ok(QMI8658C {
+            // TODO: does this want resetting?
             cmd_running: self.cmd_running,
             i2c: self.destroy(),
             _data: PhantomData,
@@ -410,6 +390,25 @@ where
         #[cfg(feature = "defmt")]
         info!("Accelerometer self test passed");
         Ok(())
+    }
+
+    /// Turn off the accelerometer and update type-state
+    pub fn deactivate_accel(
+        mut self,
+        delay: &mut impl DelayUs,
+    ) -> Result<QMI8658C<I, modes::AccelOff, G, S>, E> {
+        // TODO: check this works
+        let new_flags = flags::CTRL2 {
+            aodr: config::AODR::AN_6DOF7520,
+            ..self.get_ctrl2()?
+        };
+        self.set_ctrl2(new_flags)?;
+
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 }
 
@@ -517,6 +516,25 @@ where
         #[cfg(feature = "defmt")]
         info!("Gyroscope self test passed");
         Ok(())
+    }
+
+    /// Turn off the gyroscope and update type-state
+    pub fn deactivate_gyro(
+        mut self,
+        delay: &mut impl DelayUs,
+    ) -> Result<QMI8658C<I, A, modes::GyroOff, S>, E> {
+        // TODO: check this
+        let new_flags = flags::CTRL3 {
+            godr: config::GODR::Off,
+            ..self.get_ctrl3()?
+        };
+        self.set_ctrl3(new_flags)?;
+
+        Ok(QMI8658C {
+            cmd_running: self.cmd_running,
+            i2c: self.destroy(),
+            _data: PhantomData,
+        })
     }
 }
 
